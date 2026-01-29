@@ -39,8 +39,10 @@ except Exception as e:
 
 # --- 2. VECTOR STORAGE & EMBEDDINGS ---
 import shutil
+import glob
+from langchain_community.document_loaders import PyPDFLoader
 
-# On instancie l'objet d'embedding Mistral (nécessaire pour créer OU charger la base)
+# On instancie l'objet d'embedding Mistral
 embeddings = MistralAIEmbeddings(
     api_key=SecretStr(config.mistral_api_key),
     model=config.embedding_model
@@ -51,53 +53,84 @@ if config.reset_db and os.path.exists(config.persist_directory):
     print(f"🗑️ Option reset_db activée : Suppression de '{config.persist_directory}'...")
     shutil.rmtree(config.persist_directory)
 
-# Vérification : Est-ce que la base de données existe déjà ?
-if os.path.exists(config.persist_directory):
-    print(f"💾 Base de données trouvée dans '{config.persist_directory}'. Chargement...")
-    # On charge simplement la base existante
-    vectorstore = Chroma(
-        persist_directory=config.persist_directory,
-        embedding_function=embeddings
-    )
-    print("✅ Base chargée avec succès.")
+# Initialisation du VectorStore (il se crée s'il n'existe pas, ou se charge s'il existe)
+vectorstore = Chroma(
+    persist_directory=config.persist_directory,
+    embedding_function=embeddings
+)
 
+# --- GESTION INCREMENTALE DES PDFS ---
+print("�️  Vérification des documents existants...")
+
+# On récupère tous les fichiers PDF du dossier
+pdf_folder = "./pdf"
+pdf_files = glob.glob(os.path.join(pdf_folder, "*.pdf"))
+
+if not pdf_files:
+    print(f"⚠️ Aucun fichier PDF trouvé dans {pdf_folder}")
 else:
-    print("🚀 Aucune base trouvée (ou reset demandé). Création en cours...")
+    # On regarde ce qu'il y a déjà dans la base
+    # vectorstore.get() renvoie un dict avec 'ids', 'embeddings', 'metadatas', 'documents'
+    existing_data = vectorstore.get()
+    existing_sources = set()
     
-    # --- CHARGEMENT DU PDF (Uniquement si pas de base) ---
-    from langchain_community.document_loaders import PyPDFLoader
-    import glob
+    # On extrait les noms de fichiers des métadonnées stockées
+    if existing_data["metadatas"]:
+        for metadata in existing_data["metadatas"]:
+            # LangChain stocke le chemin complet dans 'source'
+            if metadata and "source" in metadata:
+                existing_sources.add(metadata["source"])
+    
+    print(f"📚 {len(existing_sources)} fichier(s) déjà indexé(s) dans la base.")
 
-    print("📂 Chargement du PDF...")
-    pdf_folder = "./pdf"
-    pdf_files = glob.glob(os.path.join(pdf_folder, "*.pdf"))
+    # On identifie les nouveaux à ajouter
+    new_files = []
+    for pdf_path in pdf_files:
+        # On normalise le chemin pour être sûr de la comparaison (relatif vs absolu)
+        # Note: LangChain stocke souvent le chemin tel qu'il est passé au loader.
+        # Pour être robuste, on compare juste le nom du fichier s'il y a un doute, 
+        # mais ici on va comparer les chemins tels que scannés.
+        if pdf_path not in existing_sources:
+             # Petite subtilité: parfois le chemin est absolu stocké, parfois relatif.
+             # On vérifie si l'un des existing_sources termine par notre nom de fichier
+             is_present = False
+             filename = os.path.basename(pdf_path)
+             for source in existing_sources:
+                 if source.endswith(filename):
+                     is_present = True
+                     break
+             
+             if not is_present:
+                new_files.append(pdf_path)
+        else:
+            print(f"⏩ Déjà indexé : {pdf_path}")
 
-    if not pdf_files:
-        print(f"❌ Aucun fichier PDF trouvé dans {pdf_folder}")
-        exit()
+    if not new_files:
+        print("✅ Tous les fichiers sont déjà à jour.")
+    else:
+        print(f"🚀 {len(new_files)} nouveau(x) fichier(s) détecté(s). Traitement...")
+        
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=config.chunk_size,
+            chunk_overlap=config.chunk_overlap
+        )
 
-    pdf_path = pdf_files[0]
-    print(f"📄 Lecture du fichier : {pdf_path}")
-
-    loader = PyPDFLoader(pdf_path)
-    pages = loader.load()
-    print(f"✅ {len(pages)} pages chargées.")
-
-    print("✂️ Découpage du texte...")
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=config.chunk_size,
-        chunk_overlap=config.chunk_overlap
-    )
-    docs = text_splitter.split_documents(pages)
-    print(f"🧩 Nombre de chunks créés : {len(docs)}")
-
-    # --- INDEXATION ---
-    print("💾 Indexation dans ChromaDB avec Mistral Embeddings...")
-    vectorstore = Chroma.from_documents(
-        documents=docs,
-        embedding=embeddings,
-        persist_directory=config.persist_directory
-    )
+        for pdf_path in new_files:
+            print(f"📄 Traitement de : {pdf_path}")
+            try:
+                loader = PyPDFLoader(pdf_path)
+                pages = loader.load()
+                print(f"   ↳ {len(pages)} pages chargées.")
+                
+                docs = text_splitter.split_documents(pages)
+                print(f"   ↳ {len(docs)} chunks générés. Indexation...")
+                
+                # Ajout incrémental à la base
+                vectorstore.add_documents(docs)
+                print("   ✅ Ajouté avec succès.")
+                
+            except Exception as e:
+                print(f"❌ Erreur lors du traitement de {pdf_path}: {e}")
 
 # On transforme la base en "Retriever"
 retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
