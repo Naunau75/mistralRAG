@@ -1,6 +1,8 @@
 import os
 from typing import List
-
+import shutil
+import glob
+from langchain_community.document_loaders import PyPDFLoader
 # Chargement des variables d'environnement
 from dotenv import load_dotenv
 load_dotenv()
@@ -38,9 +40,6 @@ except Exception as e:
     exit()
 
 # --- 2. VECTOR STORAGE & EMBEDDINGS ---
-import shutil
-import glob
-from langchain_community.document_loaders import PyPDFLoader
 
 # On instancie l'objet d'embedding Mistral
 embeddings = MistralAIEmbeddings(
