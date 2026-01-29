@@ -1,6 +1,10 @@
 import os
 from typing import List
 
+# Chargement des variables d'environnement
+from dotenv import load_dotenv
+load_dotenv()
+
 # Pydantic pour la validation des données et de la config
 from pydantic import BaseModel, Field, SecretStr
 
@@ -23,9 +27,6 @@ class RagConfig(BaseModel):
     chunk_overlap: int = Field(50, description="Chevauchement entre les morceaux")
     persist_directory: str = Field("./chroma_db", description="Dossier de sauvegarde BDD")
 
-# Simulation de chargement de variables d'env
-os.environ["MISTRAL_API_KEY"] = "TA_CLE_API_MISTRAL_ICI"
-
 try:
     config = RagConfig(
         mistral_api_key=os.getenv("MISTRAL_API_KEY")
@@ -35,15 +36,25 @@ except Exception as e:
     exit()
 
 # --- 2. PRÉPARATION DU TEXTE (LANGCHAIN) ---
-# Donnée brute (ex: contenu d'un fichier Markdown ou PDF)
-raw_text = """
-Mistral AI est une entreprise française cofondée par Arthur Mensch, Guillaume Lample et Timothée Lacroix.
-Elle a été créée en avril 2023.
-Le modèle Mistral Large est conçu pour les tâches de raisonnement complexe.
-Le modèle Mistral 7B est un modèle open-weights très populaire.
-LangChain est un framework pour développer des applications alimentées par des LLM.
-Pydantic permet de valider les données en Python grâce au typage.
-"""
+from langchain_community.document_loaders import PyPDFLoader
+import glob
+
+print("📂 Chargement du PDF...")
+
+# Trouver le fichier PDF dans le dossier 'pdf'
+pdf_folder = "./pdf"
+pdf_files = glob.glob(os.path.join(pdf_folder, "*.pdf"))
+
+if not pdf_files:
+    print(f"❌ Aucun fichier PDF trouvé dans {pdf_folder}")
+    exit()
+
+pdf_path = pdf_files[0] # On prend le premier PDF trouvé
+print(f"📄 Lecture du fichier : {pdf_path}")
+
+loader = PyPDFLoader(pdf_path)
+pages = loader.load()
+print(f"✅ {len(pages)} pages chargées.")
 
 print("✂️ Découpage du texte...")
 # LangChain gère le découpage intelligemment (ne coupe pas les mots/phrases si possible)
@@ -51,7 +62,10 @@ text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=config.chunk_size,
     chunk_overlap=config.chunk_overlap
 )
-docs = [Document(page_content=x) for x in text_splitter.split_text(raw_text)]
+
+# On splitte les pages chargées (qui sont déjà des Documents)
+docs = text_splitter.split_documents(pages)
+print(f"🧩 Nombre de chunks créés : {len(docs)}")
 
 
 # --- 3. CRÉATION DU VECTOR STORE (LANGCHAIN + CHROMA) ---
