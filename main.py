@@ -1,6 +1,123 @@
-def main():
-    print("Hello from missrag!")
+import os
+from typing import List
+
+# Pydantic pour la validation des données et de la config
+from pydantic import BaseModel, Field, SecretStr
+
+# LangChain pour l'orchestration
+from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+
+# --- 1. CONFIGURATION AVEC PYDANTIC ---
+# L'intérêt : Si tu oublies la clé API, le script s'arrête immédiatement avec une erreur claire.
+class RagConfig(BaseModel):
+    mistral_api_key: str = Field(..., description="Clé API Mistral")
+    model_name: str = Field("mistral-small-latest", description="Modèle pour le chat")
+    embedding_model: str = Field("mistral-embed", description="Modèle pour les vecteurs")
+    chunk_size: int = Field(500, description="Taille des morceaux de texte")
+    chunk_overlap: int = Field(50, description="Chevauchement entre les morceaux")
+    persist_directory: str = Field("./chroma_db", description="Dossier de sauvegarde BDD")
+
+# Simulation de chargement de variables d'env
+os.environ["MISTRAL_API_KEY"] = "TA_CLE_API_MISTRAL_ICI"
+
+try:
+    config = RagConfig(
+        mistral_api_key=os.getenv("MISTRAL_API_KEY")
+    )
+except Exception as e:
+    print(f"❌ Erreur de configuration : {e}")
+    exit()
+
+# --- 2. PRÉPARATION DU TEXTE (LANGCHAIN) ---
+# Donnée brute (ex: contenu d'un fichier Markdown ou PDF)
+raw_text = """
+Mistral AI est une entreprise française cofondée par Arthur Mensch, Guillaume Lample et Timothée Lacroix.
+Elle a été créée en avril 2023.
+Le modèle Mistral Large est conçu pour les tâches de raisonnement complexe.
+Le modèle Mistral 7B est un modèle open-weights très populaire.
+LangChain est un framework pour développer des applications alimentées par des LLM.
+Pydantic permet de valider les données en Python grâce au typage.
+"""
+
+print("✂️ Découpage du texte...")
+# LangChain gère le découpage intelligemment (ne coupe pas les mots/phrases si possible)
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=config.chunk_size,
+    chunk_overlap=config.chunk_overlap
+)
+docs = [Document(page_content=x) for x in text_splitter.split_text(raw_text)]
 
 
-if __name__ == "__main__":
-    main()
+# --- 3. CRÉATION DU VECTOR STORE (LANGCHAIN + CHROMA) ---
+print("💾 Indexation dans ChromaDB avec Mistral Embeddings...")
+
+# On instancie l'objet d'embedding Mistral via LangChain
+embeddings = MistralAIEmbeddings(
+    api_key=SecretStr(config.mistral_api_key),
+    model=config.embedding_model
+)
+
+# LangChain s'occupe d'appeler l'API Mistral, vectoriser et stocker dans Chroma
+vectorstore = Chroma.from_documents(
+    documents=docs,
+    embedding=embeddings,
+    persist_directory=config.persist_directory
+)
+
+# On transforme la base en "Retriever" (outil de recherche)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 2}) # k=2 : on veut les 2 meilleurs morceaux
+
+
+# --- 4. LE PIPELINE RAG (LCEL - LangChain Expression Language) ---
+print("🔗 Construction du pipeline...")
+
+# Le modèle de Chat
+llm = ChatMistralAI(
+    api_key=SecretStr(config.mistral_api_key),
+    model=config.model_name,
+    temperature=0
+)
+
+# Le Prompt Template
+template = """Réponds à la question uniquement basé sur le contexte suivant :
+{context}
+
+Question : {question}
+"""
+prompt = ChatPromptTemplate.from_template(template)
+
+# Définition de la fonction pour formater les docs récupérés (les coller ensemble)
+def format_docs(docs):
+    return "\n\n".join([d.page_content for d in docs])
+
+# LA CHAÎNE MAGIQUE (LCEL)
+# 1. On prend la question
+# 2. En parallèle : on cherche le contexte (retriever) ET on garde la question (Passthrough)
+# 3. On envoie tout au prompt
+# 4. On envoie au LLM
+# 5. On parse la sortie en string
+rag_chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+# --- 5. EXECUTION ---
+
+def ask(question: str):
+    print(f"\n❓ Question : {question}")
+    # invoke lance toute la chaîne définie au-dessus
+    response = rag_chain.invoke(question)
+    print(f"🤖 Réponse : {response}")
+
+# Tests
+ask("Qui sont les fondateurs de Mistral ?")
+ask("A quoi sert Pydantic ?")
+ask("Quelle est la hauteur de la Tour Eiffel ?") # Doit dire qu'il ne sait pas ou répondre avec ses connaissances générales si le prompt n'est pas strict.
