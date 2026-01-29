@@ -20,6 +20,7 @@ from langchain_core.output_parsers import StrOutputParser
 # --- 1. CONFIGURATION AVEC PYDANTIC ---
 # L'intérêt : Si tu oublies la clé API, le script s'arrête immédiatement avec une erreur claire.
 class RagConfig(BaseModel):
+    reset_db: bool = Field(False, description="Reset la base de données")
     mistral_api_key: str = Field(..., description="Clé API Mistral")
     model_name: str = Field("mistral-small-latest", description="Modèle pour le chat")
     embedding_model: str = Field("mistral-embed", description="Modèle pour les vecteurs")
@@ -29,7 +30,8 @@ class RagConfig(BaseModel):
 
 try:
     config = RagConfig(
-        mistral_api_key=os.getenv("MISTRAL_API_KEY")
+        mistral_api_key=os.getenv("MISTRAL_API_KEY"),
+        reset_db=False # Mettre à True pour forcer la recréation de la BDD, puis remettre à False !
     )
 except Exception as e:
     print(f"❌ Erreur de configuration : {e}")
@@ -44,6 +46,11 @@ embeddings = MistralAIEmbeddings(
     model=config.embedding_model
 )
 
+# Gestion du RESET de la base
+if config.reset_db and os.path.exists(config.persist_directory):
+    print(f"🗑️ Option reset_db activée : Suppression de '{config.persist_directory}'...")
+    shutil.rmtree(config.persist_directory)
+
 # Vérification : Est-ce que la base de données existe déjà ?
 if os.path.exists(config.persist_directory):
     print(f"💾 Base de données trouvée dans '{config.persist_directory}'. Chargement...")
@@ -55,7 +62,7 @@ if os.path.exists(config.persist_directory):
     print("✅ Base chargée avec succès.")
 
 else:
-    print("🚀 Aucune base trouvée. Création en cours...")
+    print("🚀 Aucune base trouvée (ou reset demandé). Création en cours...")
     
     # --- CHARGEMENT DU PDF (Uniquement si pas de base) ---
     from langchain_community.document_loaders import PyPDFLoader
@@ -140,4 +147,4 @@ def ask(question: str):
     print(f"🤖 Réponse : {response}")
 
 # Tests
-ask("Peux-tu m'expliquer l'effet Raman ?")
+ask("Dis moi ce que tu connais sur le village de Soubès")
