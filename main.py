@@ -35,57 +35,65 @@ except Exception as e:
     print(f"❌ Erreur de configuration : {e}")
     exit()
 
-# --- 2. PRÉPARATION DU TEXTE (LANGCHAIN) ---
-from langchain_community.document_loaders import PyPDFLoader
-import glob
+# --- 2. VECTOR STORAGE & EMBEDDINGS ---
+import shutil
 
-print("📂 Chargement du PDF...")
-
-# Trouver le fichier PDF dans le dossier 'pdf'
-pdf_folder = "./pdf"
-pdf_files = glob.glob(os.path.join(pdf_folder, "*.pdf"))
-
-if not pdf_files:
-    print(f"❌ Aucun fichier PDF trouvé dans {pdf_folder}")
-    exit()
-
-pdf_path = pdf_files[0] # On prend le premier PDF trouvé
-print(f"📄 Lecture du fichier : {pdf_path}")
-
-loader = PyPDFLoader(pdf_path)
-pages = loader.load()
-print(f"✅ {len(pages)} pages chargées.")
-
-print("✂️ Découpage du texte...")
-# LangChain gère le découpage intelligemment (ne coupe pas les mots/phrases si possible)
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=config.chunk_size,
-    chunk_overlap=config.chunk_overlap
-)
-
-# On splitte les pages chargées (qui sont déjà des Documents)
-docs = text_splitter.split_documents(pages)
-print(f"🧩 Nombre de chunks créés : {len(docs)}")
-
-
-# --- 3. CRÉATION DU VECTOR STORE (LANGCHAIN + CHROMA) ---
-print("💾 Indexation dans ChromaDB avec Mistral Embeddings...")
-
-# On instancie l'objet d'embedding Mistral via LangChain
+# On instancie l'objet d'embedding Mistral (nécessaire pour créer OU charger la base)
 embeddings = MistralAIEmbeddings(
     api_key=SecretStr(config.mistral_api_key),
     model=config.embedding_model
 )
 
-# LangChain s'occupe d'appeler l'API Mistral, vectoriser et stocker dans Chroma
-vectorstore = Chroma.from_documents(
-    documents=docs,
-    embedding=embeddings,
-    persist_directory=config.persist_directory
-)
+# Vérification : Est-ce que la base de données existe déjà ?
+if os.path.exists(config.persist_directory):
+    print(f"💾 Base de données trouvée dans '{config.persist_directory}'. Chargement...")
+    # On charge simplement la base existante
+    vectorstore = Chroma(
+        persist_directory=config.persist_directory,
+        embedding_function=embeddings
+    )
+    print("✅ Base chargée avec succès.")
 
-# On transforme la base en "Retriever" (outil de recherche)
-retriever = vectorstore.as_retriever(search_kwargs={"k": 2}) # k=2 : on veut les 2 meilleurs morceaux
+else:
+    print("🚀 Aucune base trouvée. Création en cours...")
+    
+    # --- CHARGEMENT DU PDF (Uniquement si pas de base) ---
+    from langchain_community.document_loaders import PyPDFLoader
+    import glob
+
+    print("📂 Chargement du PDF...")
+    pdf_folder = "./pdf"
+    pdf_files = glob.glob(os.path.join(pdf_folder, "*.pdf"))
+
+    if not pdf_files:
+        print(f"❌ Aucun fichier PDF trouvé dans {pdf_folder}")
+        exit()
+
+    pdf_path = pdf_files[0]
+    print(f"📄 Lecture du fichier : {pdf_path}")
+
+    loader = PyPDFLoader(pdf_path)
+    pages = loader.load()
+    print(f"✅ {len(pages)} pages chargées.")
+
+    print("✂️ Découpage du texte...")
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=config.chunk_size,
+        chunk_overlap=config.chunk_overlap
+    )
+    docs = text_splitter.split_documents(pages)
+    print(f"🧩 Nombre de chunks créés : {len(docs)}")
+
+    # --- INDEXATION ---
+    print("💾 Indexation dans ChromaDB avec Mistral Embeddings...")
+    vectorstore = Chroma.from_documents(
+        documents=docs,
+        embedding=embeddings,
+        persist_directory=config.persist_directory
+    )
+
+# On transforme la base en "Retriever"
+retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
 
 
 # --- 4. LE PIPELINE RAG (LCEL - LangChain Expression Language) ---
@@ -132,6 +140,4 @@ def ask(question: str):
     print(f"🤖 Réponse : {response}")
 
 # Tests
-ask("Qui sont les fondateurs de Mistral ?")
-ask("A quoi sert Pydantic ?")
-ask("Quelle est la hauteur de la Tour Eiffel ?") # Doit dire qu'il ne sait pas ou répondre avec ses connaissances générales si le prompt n'est pas strict.
+ask("Peux-tu m'expliquer l'effet Raman ?")
