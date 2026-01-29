@@ -8,7 +8,7 @@ Elle permet de discuter avec vos propres documents PDF. L'application ingère un
 
 ## ✨ Fonctionnalités
 
-- **📄 Ingestion de PDF** : Charge automatiquement les fichiers PDF situés dans le dossier `pdf/`.
+- **� Multi-PDF & Incrémental** : Charge automatiquement tous les fichiers PDF du dossier `pdf/`. Le script détecte les nouveaux fichiers et ne traite que ceux qui ne sont pas encore dans la base (économie de temps et de crédits API).
 - **✂️ Découpage Intelligent** : Utilise `RecursiveCharacterTextSplitter` pour découper le texte en morceaux cohérents.
 - **🔢 Embeddings Mistral** : Utilise le modèle `mistral-embed` via l'API officielle Mistral pour vectoriser le texte.
 - **💾 Base Vectorielle Locale** : Stocke les vecteurs localement avec **ChromaDB** pour une recherche rapide et persistante.
@@ -57,13 +57,16 @@ Elle permet de discuter avec vos propres documents PDF. L'application ingère un
    MISTRAL_API_KEY=votre_cle_api_commencant_par_...
    ```
 
+**Note sur le Reset :**
+Si vous souhaitez vider la base de données pour repartir de zéro, vous pouvez passer l'option `reset_db=True` dans la configuration `RagConfig` (dans `main.py`).
+
 ---
 
 ## 🏃‍♂️ Utilisation
 
-1. **Ajouter un document** :
-   Placez votre fichier PDF (par exemple `these.pdf`) dans le dossier `pdf/`.
-   L'application prendra automatiquement le premier fichier PDF trouvé dans ce dossier.
+1. **Ajouter des documents** :
+   Placez vos fichiers PDF (par exemple `these.pdf`, `guide.pdf`) dans le dossier `pdf/`.
+   L'application scannera ce dossier et n'ajoutera que les fichiers qui ne sont pas encore indexés.
 
 2. **Lancer l'application** :
    ```bash
@@ -72,7 +75,7 @@ Elle permet de discuter avec vos propres documents PDF. L'application ingère un
    *(Assurez-vous que votre environnement virtuel est activé)*
 
 3. **Poser des questions** :
-   Le script exécutera des questions de test définies à la fin du fichier `main.py`. Vous pouvez modifier ces appels `ask("Votre question ?")` directement dans le code pour interroger votre document.
+   Le script exécutera des questions de test définies à la fin du fichier `main.py`. Vous pouvez modifier ces appels `ask("Votre question ?")` directement dans le code pour interroger votre base de connaissances.
 
 ---
 
