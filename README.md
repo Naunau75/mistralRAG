@@ -91,9 +91,9 @@ Si vous souhaitez vider la base de données pour repartir de zéro, vous pouvez 
 
 2. **Lancer l'application** :
    ```bash
-   python main.py
+   uv run main.py
    ```
-   *(Assurez-vous que votre environnement virtuel est activé)*
+   *(Assurez-vous que votre environnement virtuel est activé si vous passez par la commande python main.py)*
 
 3. **Poser des questions** :
    Le script exécutera des questions de test définies à la fin du fichier `main.py`. Vous pouvez modifier ces appels `ask("Votre question ?")` directement dans le code pour interroger votre base de connaissances.
