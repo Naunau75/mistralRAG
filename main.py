@@ -167,12 +167,7 @@ prompt = ChatPromptTemplate.from_template(template)
 def format_docs(docs):
     return "\n\n".join([d.page_content for d in docs])
 
-# LA CHAÎNE MAGIQUE (LCEL)
-# 1. On prend la question
-# 2. En parallèle : on cherche le contexte (retriever) ET on garde la question (Passthrough)
-# 3. On envoie tout au prompt
-# 4. On envoie au LLM
-# 5. On parse la sortie en string
+
 rag_chain = (
     {"context": retriever | format_docs, "question": RunnablePassthrough()}
     | prompt
