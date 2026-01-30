@@ -1,6 +1,6 @@
 # 🧠 MissRAG
 
-**MissRAG** est une application de **Retrieval-Augmented Generation (RAG)** minimaliste et puissante, construite avec **Mistral AI**, **LangChain** et **ChromaDB**.
+**MissRAG** est une application de **Retrieval-Augmented Generation (RAG)** minimaliste et puissante, construite avec **Mistral AI**, **LangChain** et **MongoDB Atlas**.
 
 Elle permet de discuter avec vos propres documents PDF. L'application ingère un fichier PDF, le transforme en vecteurs (embeddings), et utilise un modèle de langage Mistral pour répondre à vos questions en se basant sur le contenu du document.
 
@@ -11,7 +11,7 @@ Elle permet de discuter avec vos propres documents PDF. L'application ingère un
 - **� Multi-PDF & Incrémental** : Charge automatiquement tous les fichiers PDF du dossier `pdf/`. Le script détecte les nouveaux fichiers et ne traite que ceux qui ne sont pas encore dans la base (économie de temps et de crédits API).
 - **✂️ Découpage Intelligent** : Utilise `RecursiveCharacterTextSplitter` pour découper le texte en morceaux cohérents.
 - **🔢 Embeddings Mistral** : Utilise le modèle `mistral-embed` via l'API officielle Mistral pour vectoriser le texte.
-- **💾 Base Vectorielle Locale** : Stocke les vecteurs localement avec **ChromaDB** pour une recherche rapide et persistante.
+- **☁️ Base Vectorielle Cloud** : Stocke les vecteurs avec **MongoDB Atlas Vector Search** pour une architecture scalable et cloud-native.
 - **🤖 Chat IA** : Utilise le LLM `mistral-small-latest` pour générer des réponses précises basées sur le contexte retrouvé.
 - **🛡️ Configuration Robuste** : Utilise **Pydantic** pour la validation de la configuration et la gestion des erreurs.
 
@@ -22,6 +22,7 @@ Elle permet de discuter avec vos propres documents PDF. L'application ingère un
 - **Python 3.13** (Recommandé)
 - **uv** (Gestionnaire de paquets ultra-rapide)
 - Une clé API **Mistral AI** (disponible sur [console.mistral.ai](https://console.mistral.ai/))
+- Un cluster **MongoDB Atlas** (le tier gratuit M0 suffit)
 
 ---
 
@@ -40,7 +41,7 @@ Elle permet de discuter avec vos propres documents PDF. L'application ingère un
    ```
    *Ou manuellement si vous n'avez pas le fichier lock :*
    ```bash
-   uv add langchain langchain-mistralai langchain-chroma langchain-text-splitters chromadb pydantic python-dotenv pypdf langchain-community
+   uv add langchain langchain-mistralai langchain-mongodb pymongo langchain-text-splitters pydantic python-dotenv pypdf langchain-community
    ```
 
 ---
@@ -54,8 +55,28 @@ Elle permet de discuter avec vos propres documents PDF. L'application ingère un
 
 2. **Ajouter votre clé API Mistral** dans le fichier `.env` :
    ```properties
-   MISTRAL_API_KEY=votre_cle_api_commencant_par_...
+   MISTRAL_API_KEY=votre_cle_api_mistral...
+   MONGODB_ATLAS_Cluster_URI=mongodb+srv://user:pass@cluster.mongodb.net/?...
    ```
+
+3. **Créer l'Index Vectoriel sur Atlas** (⚠️ Étape Obligatoire) :
+   - Connectez-vous à votre cluster MongoDB Atlas.
+   - Allez dans l'onglet **"Atlas Search"** (ou "Vector Search").
+   - Créez un nouvel index nommé `vector_index`.
+   - Choisissez "JSON Editor" et collez la configuration suivante :
+     ```json
+     {
+       "fields": [
+         {
+           "numDimensions": 1024,
+           "path": "embedding",
+           "similarity": "cosine",
+           "type": "vector"
+         }
+       ]
+     }
+     ```
+   - *Note : Sélectionnez bien la database `missrag_db` et la collection `rag_collection`.*
 
 **Note sur le Reset :**
 Si vous souhaitez vider la base de données pour repartir de zéro, vous pouvez passer l'option `reset_db=True` dans la configuration `RagConfig` (dans `main.py`).
@@ -97,5 +118,5 @@ missrag/
 - **Langage** : Python 3.13
 - **Orchestration** : [LangChain](https://www.langchain.com/)
 - **LLM & Embeddings** : [Mistral AI](https://mistral.ai/)
-- **Vector Store** : [ChromaDB](https://www.trychroma.com/)
+- **Vector Store** : [MongoDB Atlas Vector Search](https://www.mongodb.com/products/platform/atlas-vector-search)
 - **Validation** : [Pydantic](https://docs.pydantic.dev/)
